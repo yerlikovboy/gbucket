@@ -34,6 +34,7 @@ func ls(name string) {
 }
 
 func write(bucket string, name string, content string) {
+	log.Printf("writing ... (bucket: %s, name: %s)", bucket, name)
 	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
 	if err != nil {
@@ -41,7 +42,20 @@ func write(bucket string, name string, content string) {
 		return
 	}
 
-	wc := client.Bucket(bucket).Object(name).NewWriter(ctx)
+	acls, err := client.Bucket(bucket).ACL().List(ctx)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("new object acls: %v", acls)
+
+	obj := client.Bucket(bucket).Object(name)
+	wc := obj.NewWriter(ctx)
+	wc.ContentType = "text/plain"
+
+	publicRead := storage.ACLRule{storage.AllUsers, storage.RoleReader}
+
+	wc.ACL = append(acls, publicRead)
+	//wc.ACL = []storage.ACLRule{{storage.AllUsers, storage.RoleReader}}
 
 	// Write some text to obj. This will overwrite whatever is there.
 	if _, err := fmt.Fprintf(wc, content); err != nil {
@@ -53,16 +67,50 @@ func write(bucket string, name string, content string) {
 		log.Printf("error closing handle: %+v\n")
 		return
 	}
+	/*
+		obj := client.Bucket(bucket).Object(filename)
+		acls, err := obj.ACL().List(ctx)
+		if err != nil {
+			panic(err)
+		}
+	*/
+
+}
+
+func acls(bucket, filename string) {
+	ctx := context.Background()
+
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	obj := client.Bucket(bucket).Object(filename)
+	acls, err := obj.ACL().List(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, rule := range acls {
+		fmt.Printf("rule (%T) %s has role %s\n", rule, rule.Entity, rule.Role)
+	}
+
 }
 
 // read whats in the bucket
 func read(bucket string) {
 	ctx := context.Background()
+
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		// TODO: handle error.
 	}
-	rc, err := client.Bucket(bucket).Object("test-file.txt").NewReader(ctx)
+	defer client.Close()
+
+	obj := client.Bucket(bucket).Object("test-file.txt")
+
+	rc, err := obj.NewReader(ctx)
 	if err != nil {
 		log.Printf("error opening reader: %+v\n", err)
 		return
@@ -131,8 +179,13 @@ func main() {
 		fmt.Printf("Bucket %v created.", bucketName)
 	*/
 
-	read("guler-bucket")
-	ls("guler-bucket")
-	write("guler-bucket", "lob.txt", "always look on the bright side of life")
+	// read("guler-bucket")
+	//acls("guler-bucket", "test-file.txt")
+	//	ls("guler-bucket")
+
+	//write("guler-bucket", "lob.txt", "always look on the bright side of life")
+	write("guler-bucket", "lob-public.txt", "always look on the bright side of life")
+
+	acls("guler-bucket", "lob-public.txt")
 
 }
